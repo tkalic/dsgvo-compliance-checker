@@ -16,7 +16,8 @@ from bs4 import BeautifulSoup
 from checker.checks import (
     ScanContext, check_https, check_privacy_policy, check_imprint,
     check_cookie_banner, check_trackers, check_security_headers,
-    check_hsts, check_forms_https
+    check_hsts, check_forms_https, check_google_fonts,
+    check_youtube_embeds, check_mixed_content
 )
 from checker.scanner import ScanResult
 from checker.report import generate_html_report
@@ -179,6 +180,79 @@ class TestSecureForms:
     def test_passes_with_relative_action(self):
         html = '<form action="/submit"></form>'
         assert check_forms_https(make_ctx(html)).passed is True
+
+
+# ── Google Fonts checks ───────────────────────────────────────────────────────
+
+class TestGoogleFonts:
+    def test_detects_google_fonts_link(self):
+        html = '<link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet">'
+        result = check_google_fonts(make_ctx(html))
+        assert result.passed is False
+        assert len(result.found_items) > 0
+
+    def test_detects_gstatic(self):
+        html = '<link href="https://fonts.gstatic.com/s/roboto/v30/font.woff2" rel="stylesheet">'
+        assert check_google_fonts(make_ctx(html)).passed is False
+
+    def test_passes_with_self_hosted_fonts(self):
+        html = '<link href="/fonts/roboto.woff2" rel="stylesheet">'
+        assert check_google_fonts(make_ctx(html)).passed is True
+
+    def test_is_critical(self):
+        html = '<link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet">'
+        assert check_google_fonts(make_ctx(html)).severity == "critical"
+
+    def test_references_lg_muenchen(self):
+        html = '<link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet">'
+        result = check_google_fonts(make_ctx(html))
+        assert "LG München" in result.gdpr_reference or "3 O 17493" in result.gdpr_reference
+
+
+# ── YouTube embed checks ──────────────────────────────────────────────────────
+
+class TestYouTubeEmbeds:
+    def test_detects_standard_embed(self):
+        html = '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>'
+        result = check_youtube_embeds(make_ctx(html))
+        assert result.passed is False
+        assert len(result.found_items) > 0
+
+    def test_passes_with_nocookie(self):
+        html = '<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe>'
+        assert check_youtube_embeds(make_ctx(html)).passed is True
+
+    def test_passes_without_youtube(self):
+        html = '<iframe src="https://vimeo.com/embed/123"></iframe>'
+        assert check_youtube_embeds(make_ctx(html)).passed is True
+
+    def test_is_critical(self):
+        html = '<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>'
+        assert check_youtube_embeds(make_ctx(html)).severity == "critical"
+
+
+# ── Mixed content checks ──────────────────────────────────────────────────────
+
+class TestMixedContent:
+    def test_detects_http_script(self):
+        html = '<script src="http://cdn.example.com/script.js"></script>'
+        result = check_mixed_content(make_ctx(html, response_url="https://example.com"))
+        assert result.passed is False
+
+    def test_detects_http_image(self):
+        html = '<img src="http://example.com/image.png">'
+        result = check_mixed_content(make_ctx(html, response_url="https://example.com"))
+        assert result.passed is False
+
+    def test_passes_with_https_resources(self):
+        html = '<script src="https://cdn.example.com/script.js"></script>'
+        result = check_mixed_content(make_ctx(html, response_url="https://example.com"))
+        assert result.passed is True
+
+    def test_skips_on_http_site(self):
+        html = '<script src="http://cdn.example.com/script.js"></script>'
+        result = check_mixed_content(make_ctx(html, response_url="http://example.com"))
+        assert result.severity == "info"
 
 
 # ── ScanResult scoring ────────────────────────────────────────────────────────

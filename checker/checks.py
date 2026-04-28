@@ -234,6 +234,122 @@ def check_forms_https(ctx: ScanContext) -> CheckResult:
     )
 
 
+def check_google_fonts(ctx: ScanContext) -> CheckResult:
+    """
+    Check for externally loaded Google Fonts.
+
+    LG München, 20.01.2022 (Az. 3 O 17493/20): Loading Google Fonts from
+    Google servers transmits the visitor's IP address to Google without consent,
+    violating Art. 6 DSGVO. Self-hosting fonts is the compliant alternative.
+    """
+    patterns = ["fonts.googleapis.com", "fonts.gstatic.com"]
+    found = []
+
+    # Check <link> tags
+    for tag in ctx.soup.find_all("link", href=True):
+        href = tag.get("href", "")
+        if any(p in href for p in patterns):
+            found.append(href[:80])
+
+    # Check inline styles and scripts
+    for pattern in patterns:
+        if pattern in ctx.html and pattern not in str(found):
+            found.append(pattern)
+
+    found = list(set(found))
+    passed = len(found) == 0
+
+    return CheckResult(
+        name="Google Fonts (External)",
+        passed=passed,
+        severity="critical",
+        detail="No external Google Fonts detected." if passed else f"External Google Fonts detected: {', '.join(found[:2])}",
+        recommendation="" if passed else "Self-host your fonts instead. Google Fonts can be downloaded and served from your own server.",
+        gdpr_reference="Art. 6 DSGVO — LG München 20.01.2022 (Az. 3 O 17493/20)",
+        found_items=found,
+    )
+
+
+def check_youtube_embeds(ctx: ScanContext) -> CheckResult:
+    """
+    Check for YouTube iframes without privacy-enhanced mode.
+
+    Embedding youtube.com/embed (non-nocookie) loads tracking scripts
+    from Google/YouTube without user consent — same legal basis as Google Fonts.
+    Use youtube-nocookie.com as the privacy-compliant alternative.
+    """
+    iframes = ctx.soup.find_all("iframe", src=True)
+    regular = []
+    nocookie = []
+
+    for iframe in iframes:
+        src = iframe.get("src", "")
+        if "youtube.com/embed" in src and "youtube-nocookie.com" not in src:
+            regular.append(src[:80])
+        elif "youtube-nocookie.com" in src:
+            nocookie.append(src[:80])
+
+    passed = len(regular) == 0
+    detail = "No standard YouTube embeds detected."
+    if regular:
+        detail = f"{len(regular)} YouTube embed(s) using tracking mode found."
+    elif nocookie:
+        detail = f"YouTube embeds use privacy-enhanced mode (youtube-nocookie.com). ✓"
+
+    return CheckResult(
+        name="YouTube Embeds",
+        passed=passed,
+        severity="critical",
+        detail=detail,
+        recommendation="" if passed else "Replace youtube.com/embed URLs with youtube-nocookie.com/embed to prevent tracking without consent.",
+        gdpr_reference="Art. 6 DSGVO — IP transmission to Google without consent",
+        found_items=regular,
+    )
+
+
+def check_mixed_content(ctx: ScanContext) -> CheckResult:
+    """
+    Check for mixed content — HTTP resources loaded on an HTTPS page.
+
+    Mixed content weakens the security of HTTPS pages and may expose
+    user data. Browsers block or warn about mixed content per Art. 32 DSGVO.
+    """
+    if not ctx.response_url.startswith("https://"):
+        return CheckResult(
+            name="Mixed Content",
+            passed=False,
+            severity="info",
+            detail="Site does not use HTTPS — mixed content check skipped.",
+            recommendation="Enable HTTPS first.",
+            gdpr_reference="Art. 32 DSGVO",
+        )
+
+    http_resources = []
+
+    # Check src attributes on scripts, images, iframes
+    for tag in ctx.soup.find_all(["script", "img", "iframe", "source", "audio", "video"], src=True):
+        src = tag.get("src", "")
+        if src.startswith("http://"):
+            http_resources.append(f"<{tag.name}> {src[:60]}")
+
+    # Check href on link tags (stylesheets)
+    for tag in ctx.soup.find_all("link", href=True):
+        href = tag.get("href", "")
+        if href.startswith("http://"):
+            http_resources.append(f"<link> {href[:60]}")
+
+    passed = len(http_resources) == 0
+    return CheckResult(
+        name="Mixed Content",
+        passed=passed,
+        severity="warning",
+        detail="No mixed content detected." if passed else f"{len(http_resources)} HTTP resource(s) loaded on HTTPS page.",
+        recommendation="" if passed else "Replace all HTTP resource URLs with HTTPS equivalents.",
+        gdpr_reference="Art. 32 DSGVO — Integrity and confidentiality",
+        found_items=http_resources[:5],
+    )
+
+
 def run_all_checks(ctx: ScanContext) -> list[CheckResult]:
     return [
         check_https(ctx),
@@ -241,6 +357,9 @@ def run_all_checks(ctx: ScanContext) -> list[CheckResult]:
         check_imprint(ctx),
         check_cookie_banner(ctx),
         check_trackers(ctx),
+        check_google_fonts(ctx),
+        check_youtube_embeds(ctx),
+        check_mixed_content(ctx),
         check_security_headers(ctx),
         check_hsts(ctx),
         check_forms_https(ctx),
