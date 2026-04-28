@@ -1,0 +1,71 @@
+# Known third-party tracker domains
+# Sources: EasyPrivacy, disconnect.me, uBlock Origin
+
+# Analytics
+google-analytics.com
+analytics.google.com
+googletagmanager.com
+googletagservices.com
+doubleclick.net
+gtag
+ga.js
+analytics.js
+
+# Meta / Facebook
+connect.facebook.net
+facebook.com/tr
+fbcdn.net
+facebook.net
+
+# Microsoft
+bat.bing.com
+clarity.ms
+
+# Hotjar
+hotjar.com
+static.hotjar.com
+
+# Matomo / Piwik
+matomo.org
+piwik.org
+
+# Mixpanel
+mixpanel.com
+
+# Segment
+segment.com
+cdn.segment.com
+
+# Intercom
+intercom.io
+widget.intercom.io
+
+# HubSpot
+hubspot.com
+hs-scripts.com
+hs-analytics.net
+
+# LinkedIn
+snap.licdn.com
+linkedin.com/insight
+
+# Twitter / X
+static.ads-twitter.com
+t.co
+
+# TikTok
+analytics.tiktok.com
+
+# Criteo
+criteo.com
+criteo.net
+
+# Amazon
+amazon-adsystem.com
+
+# Cloudflare Insights (optional analytics)
+static.cloudflareinsights.com
+
+# Sentry (error tracking)
+sentry.io
+browser.sentry-cdn.com
