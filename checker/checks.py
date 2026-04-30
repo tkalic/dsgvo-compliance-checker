@@ -350,6 +350,138 @@ def check_mixed_content(ctx: ScanContext) -> CheckResult:
     )
 
 
+def check_cookie_attributes(ctx: ScanContext) -> CheckResult:
+    """
+    Check Set-Cookie headers for security attributes.
+
+    Cookies without HttpOnly can be read via JavaScript (XSS risk).
+    Cookies without Secure are transmitted over HTTP.
+    Cookies without SameSite are vulnerable to CSRF attacks.
+    All three are required for Art. 32 DSGVO compliance.
+    """
+    set_cookie = ctx.headers.get("Set-Cookie", "") or ctx.headers.get("set-cookie", "")
+    if not set_cookie:
+        # Try to find multiple Set-Cookie headers
+        set_cookies = [v for k, v in ctx.headers.items() if k.lower() == "set-cookie"]
+        set_cookie = "; ".join(set_cookies)
+
+    if not set_cookie:
+        return CheckResult(
+            name="Cookie Security Attributes",
+            passed=True,
+            severity="info",
+            detail="No Set-Cookie headers found on this page.",
+            recommendation="",
+            gdpr_reference="Art. 32 DSGVO — Security of processing",
+        )
+
+    cookie_lower = set_cookie.lower()
+    missing = []
+    if "httponly" not in cookie_lower:
+        missing.append("HttpOnly (prevents JavaScript access — XSS protection)")
+    if "secure" not in cookie_lower:
+        missing.append("Secure (ensures cookie only sent over HTTPS)")
+    if "samesite" not in cookie_lower:
+        missing.append("SameSite (prevents CSRF attacks)")
+
+    passed = len(missing) == 0
+    return CheckResult(
+        name="Cookie Security Attributes",
+        passed=passed,
+        severity="warning",
+        detail="All security attributes present." if passed else f"Missing cookie attributes: {', '.join([m.split(' ')[0] for m in missing])}",
+        recommendation="" if passed else f"Add to Set-Cookie header: {'; '.join([m.split(' ')[0] for m in missing])}",
+        gdpr_reference="Art. 32 DSGVO — Technical security measures",
+        found_items=missing,
+    )
+
+
+def check_recaptcha(ctx: ScanContext) -> CheckResult:
+    """
+    Check for Google reCAPTCHA without consent.
+
+    reCAPTCHA v2/v3 sends browser fingerprinting data (IP, user agent,
+    cookies, mouse movements) to Google servers without explicit user consent.
+    Same legal basis as Google Fonts — Art. 6 DSGVO requires consent.
+    """
+    patterns = [
+        "google.com/recaptcha",
+        "recaptcha/api.js",
+        "recaptcha/enterprise.js",
+        "gstatic.com/recaptcha",
+        "hcaptcha.com",  # hCaptcha — privacy-friendlier alternative
+    ]
+    found = []
+    for pattern in patterns:
+        if pattern in ctx.html:
+            found.append(pattern)
+
+    has_recaptcha = any("recaptcha" in f for f in found)
+    has_hcaptcha = any("hcaptcha" in f for f in found)
+
+    if has_hcaptcha and not has_recaptcha:
+        return CheckResult(
+            name="CAPTCHA Provider",
+            passed=True,
+            severity="info",
+            detail="hCaptcha detected — privacy-friendlier alternative to Google reCAPTCHA.",
+            recommendation="",
+            gdpr_reference="Art. 6 DSGVO",
+            found_items=found,
+        )
+
+    passed = not has_recaptcha
+    return CheckResult(
+        name="CAPTCHA Provider",
+        passed=passed,
+        severity="warning",
+        detail="No Google reCAPTCHA detected." if passed else "Google reCAPTCHA detected — transmits fingerprinting data to Google.",
+        recommendation="" if passed else "Consider hCaptcha or Cloudflare Turnstile as privacy-friendly alternatives, or ensure reCAPTCHA is only loaded after explicit consent.",
+        gdpr_reference="Art. 6 DSGVO — Lawful basis for data transmission to Google",
+        found_items=found,
+    )
+
+
+def check_dns_prefetch(ctx: ScanContext) -> CheckResult:
+    """
+    Check for DNS prefetch to third-party domains.
+
+    <link rel="dns-prefetch"> causes the browser to resolve DNS for external
+    domains immediately — transmitting the visitor's IP to those DNS servers
+    without consent. Often overlooked but legally equivalent to loading
+    third-party resources.
+    """
+    prefetch_links = ctx.soup.find_all("link", rel=lambda r: r and "dns-prefetch" in r)
+    preconnect_links = ctx.soup.find_all("link", rel=lambda r: r and "preconnect" in r)
+
+    external = []
+    base_domain = urlparse(ctx.url).netloc.replace("www.", "")
+
+    for link in prefetch_links + preconnect_links:
+        href = link.get("href", "")
+        if not href:
+            continue
+        # Normalize protocol-relative URLs
+        if href.startswith("//"):
+            href = "https:" + href
+        if "://" in href:
+            domain = urlparse(href).netloc.replace("www.", "")
+            if domain and base_domain not in domain:
+                rel = " ".join(link.get("rel", []))
+                external.append(f"{rel}: {href}")
+
+    passed = len(external) == 0
+    return CheckResult(
+        name="DNS Prefetch / Preconnect",
+        passed=passed,
+        severity="info",
+        detail="No third-party DNS prefetch or preconnect directives found." if passed else f"{len(external)} third-party prefetch/preconnect directive(s) found.",
+        recommendation="" if passed else "DNS prefetch to third-party domains transmits visitor IPs without consent. Review whether these are necessary.",
+        gdpr_reference="Art. 6 DSGVO — IP transmission to third parties",
+        found_items=external[:5],
+    )
+
+
 def run_all_checks(ctx: ScanContext) -> list[CheckResult]:
     return [
         check_https(ctx),
@@ -360,6 +492,9 @@ def run_all_checks(ctx: ScanContext) -> list[CheckResult]:
         check_google_fonts(ctx),
         check_youtube_embeds(ctx),
         check_mixed_content(ctx),
+        check_cookie_attributes(ctx),
+        check_recaptcha(ctx),
+        check_dns_prefetch(ctx),
         check_security_headers(ctx),
         check_hsts(ctx),
         check_forms_https(ctx),

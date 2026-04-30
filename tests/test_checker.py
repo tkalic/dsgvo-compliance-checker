@@ -17,7 +17,8 @@ from checker.checks import (
     ScanContext, check_https, check_privacy_policy, check_imprint,
     check_cookie_banner, check_trackers, check_security_headers,
     check_hsts, check_forms_https, check_google_fonts,
-    check_youtube_embeds, check_mixed_content
+    check_youtube_embeds, check_mixed_content,
+    check_cookie_attributes, check_recaptcha, check_dns_prefetch
 )
 from checker.scanner import ScanResult
 from checker.report import generate_html_report
@@ -253,6 +254,85 @@ class TestMixedContent:
         html = '<script src="http://cdn.example.com/script.js"></script>'
         result = check_mixed_content(make_ctx(html, response_url="http://example.com"))
         assert result.severity == "info"
+
+
+# ── Cookie attribute checks ───────────────────────────────────────────────────
+
+class TestCookieAttributes:
+    def test_passes_with_all_attributes(self):
+        headers = {"Set-Cookie": "session=abc; HttpOnly; Secure; SameSite=Strict"}
+        assert check_cookie_attributes(make_ctx(headers=headers)).passed is True
+
+    def test_fails_missing_httponly(self):
+        headers = {"Set-Cookie": "session=abc; Secure; SameSite=Strict"}
+        result = check_cookie_attributes(make_ctx(headers=headers))
+        assert result.passed is False
+        assert any("HttpOnly" in i for i in result.found_items)
+
+    def test_fails_missing_secure(self):
+        headers = {"Set-Cookie": "session=abc; HttpOnly; SameSite=Strict"}
+        result = check_cookie_attributes(make_ctx(headers=headers))
+        assert result.passed is False
+        assert any("Secure" in i for i in result.found_items)
+
+    def test_fails_missing_samesite(self):
+        headers = {"Set-Cookie": "session=abc; HttpOnly; Secure"}
+        result = check_cookie_attributes(make_ctx(headers=headers))
+        assert result.passed is False
+        assert any("SameSite" in i for i in result.found_items)
+
+    def test_passes_no_cookies(self):
+        assert check_cookie_attributes(make_ctx(headers={})).passed is True
+
+
+# ── reCAPTCHA checks ──────────────────────────────────────────────────────────
+
+class TestRecaptcha:
+    def test_detects_recaptcha_v2(self):
+        html = '<script src="https://www.google.com/recaptcha/api.js"></script>'
+        result = check_recaptcha(make_ctx(html))
+        assert result.passed is False
+
+    def test_detects_recaptcha_enterprise(self):
+        html = '<script src="https://www.google.com/recaptcha/enterprise.js"></script>'
+        assert check_recaptcha(make_ctx(html)).passed is False
+
+    def test_passes_without_recaptcha(self):
+        html = '<form><input type="text"></form>'
+        assert check_recaptcha(make_ctx(html)).passed is True
+
+    def test_passes_with_hcaptcha(self):
+        html = '<script src="https://js.hcaptcha.com/1/api.js"></script>'
+        result = check_recaptcha(make_ctx(html))
+        assert result.passed is True
+
+    def test_is_warning_not_critical(self):
+        html = '<script src="https://www.google.com/recaptcha/api.js"></script>'
+        assert check_recaptcha(make_ctx(html)).severity == "warning"
+
+
+# ── DNS prefetch checks ───────────────────────────────────────────────────────
+
+class TestDNSPrefetch:
+    def test_detects_third_party_prefetch(self):
+        html = '<link rel="dns-prefetch" href="//fonts.googleapis.com">'
+        result = check_dns_prefetch(make_ctx(html, url="https://example.com"))
+        assert result.passed is False
+        assert len(result.found_items) > 0
+
+    def test_detects_preconnect(self):
+        html = '<link rel="preconnect" href="https://cdn.external.com">'
+        result = check_dns_prefetch(make_ctx(html, url="https://example.com"))
+        assert result.passed is False
+
+    def test_passes_with_same_domain(self):
+        html = '<link rel="dns-prefetch" href="https://example.com">'
+        result = check_dns_prefetch(make_ctx(html, url="https://example.com"))
+        assert result.passed is True
+
+    def test_passes_without_prefetch(self):
+        html = '<link rel="stylesheet" href="/style.css">'
+        assert check_dns_prefetch(make_ctx(html, url="https://example.com")).passed is True
 
 
 # ── ScanResult scoring ────────────────────────────────────────────────────────

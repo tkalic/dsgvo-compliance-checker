@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DSGVO Compliance Checker</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #1a1d27;
+    --border: #1e2230;
+    --border2: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #4a5568;
+    --muted2: #64748b;
+    --accent: #3b82f6;
+    --accent-dim: #1d4ed8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --orange: #f97316;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    position: sticky;
+    top: 0;
+    background: rgba(10,12,16,0.95);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+  .logo span { color: var(--muted2); }
+  nav { margin-left: auto; display: flex; gap: 0.25rem; }
+  .tab-btn {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--muted2);
+    padding: 0.4rem 0.9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-family: var(--sans);
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); border-color: var(--border2); }
+  .tab-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(59,130,246,0.08); }
+
+  /* ── Layout ── */
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── Scan Input ── */
+  .scan-hero { text-align: center; padding: 3rem 0 2rem; }
+  .scan-hero h1 { font-size: 1.6rem; font-weight: 600; margin-bottom: 0.5rem; }
+  .scan-hero p { color: var(--muted2); font-size: 0.9rem; margin-bottom: 2rem; }
+  .input-row {
+    display: flex;
+    gap: 0.5rem;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .url-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-family: var(--mono);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .url-input:focus { border-color: var(--accent); }
+  .url-input::placeholder { color: var(--muted); }
+  .scan-btn {
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    font-family: var(--sans);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .scan-btn:hover { background: var(--accent-dim); }
+  .scan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Compare input ── */
+  .compare-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    max-width: 800px;
+    margin: 0 auto 1rem;
+  }
+  .compare-inputs .url-input { width: 100%; }
+  .compare-btn-row { text-align: center; }
+
+  /* ── Loading ── */
+  .loading {
+    text-align: center;
+    padding: 3rem;
+    color: var(--muted2);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    display: none;
+  }
+  .loading-dot {
+    display: inline-block;
+    animation: blink 1.2s infinite;
+  }
+  .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+  .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+
+  /* ── Score card ── */
+  .score-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+  }
+  .rating-badge {
+    font-size: 3.5rem;
+    font-weight: 700;
+    font-family: var(--mono);
+    line-height: 1;
+    min-width: 70px;
+    text-align: center;
+  }
+  .score-info { flex: 1; }
+  .score-url {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+    word-break: break-all;
+  }
+  .score-number { font-size: 1.8rem; font-weight: 600; }
+  .score-sub { color: var(--muted2); font-size: 0.8rem; margin-top: 0.2rem; }
+  .score-meta { color: var(--muted); font-size: 0.75rem; font-family: var(--mono); }
+
+  /* ── Checks list ── */
+  .checks-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .check-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+    display: flex;
+    gap: 0.875rem;
+    align-items: flex-start;
+    transition: border-color 0.15s;
+  }
+  .check-item.passed { border-left: 3px solid var(--green); }
+  .check-item.failed-critical { border-left: 3px solid var(--red); }
+  .check-item.failed-warning { border-left: 3px solid var(--yellow); }
+  .check-item.failed-info { border-left: 3px solid var(--muted2); }
+  .check-icon { font-size: 0.9rem; min-width: 18px; margin-top: 1px; }
+  .check-body { flex: 1; min-width: 0; }
+  .check-header { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
+  .check-name { font-weight: 500; font-size: 0.875rem; }
+  .check-ref {
+    font-size: 0.68rem;
+    color: var(--accent);
+    background: rgba(59,130,246,0.1);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+  }
+  .check-detail { color: var(--muted2); font-size: 0.8rem; }
+  .check-rec { color: var(--yellow); font-size: 0.8rem; margin-top: 0.3rem; }
+  .check-found {
+    margin-top: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--red);
+  }
+  .check-found li { list-style: none; padding: 0.1rem 0; word-break: break-all; }
+  .check-found li::before { content: "→ "; color: var(--muted2); }
+
+  /* ── Compare view ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+  }
+  .compare-col { }
+  .compare-header {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── History ── */
+  .history-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
+  .history-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .history-item:hover { border-color: var(--border2); }
+  .history-rating {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 1.1rem;
+    min-width: 24px;
+    text-align: center;
+  }
+  .history-info { flex: 1; min-width: 0; }
+  .history-url {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-meta { color: var(--muted2); font-size: 0.75rem; margin-top: 0.1rem; }
+  .history-score { color: var(--muted2); font-family: var(--mono); font-size: 0.8rem; text-align: right; }
+  .empty-state { text-align: center; color: var(--muted); padding: 3rem; font-size: 0.875rem; }
+
+  /* ── Error ── */
+  .error-msg {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    padding: 1rem;
+    color: var(--red);
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+    margin-top: 1.5rem;
+  }
+
+  @media (max-width: 640px) {
+    .compare-grid { grid-template-columns: 1fr; }
+    .compare-inputs { grid-template-columns: 1fr; }
+    .input-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">dsgvo<span>-checker</span></div>
+  <nav>
+    <button class="tab-btn active" onclick="showView('scan')">Scan</button>
+    <button class="tab-btn" onclick="showView('compare')">Compare</button>
+    <button class="tab-btn" onclick="showView('history')">History</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ── Scan View ── -->
+  <div class="view active" id="view-scan">
+    <div class="scan-hero">
+      <h1>DSGVO Compliance Scanner</h1>
+      <p>Check any website for GDPR/DSGVO compliance issues — cookie banners, trackers, security headers, and more.</p>
+      <div class="input-row">
+        <input class="url-input" id="scan-url" type="text" placeholder="https://example.com" autocomplete="off"/>
+        <button class="scan-btn" id="scan-btn" onclick="runScan()">Scan</button>
+      </div>
+    </div>
+    <div class="loading" id="scan-loading">
+      Scanning<span class="loading-dot">.</span><span class="loading-dot">.</span><span class="loading-dot">.</span>
+    </div>
+    <div id="scan-result"></div>
+  </div>
+
+  <!-- ── Compare View ── -->
+  <div class="view" id="view-compare">
+    <div class="scan-hero">
+      <h1>Compare Two Sites</h1>
+      <p>Side-by-side DSGVO compliance comparison.</p>
+      <div class="compare-inputs">
+        <input class="url-input" id="compare-url-a" type="text" placeholder="https://site-a.com" autocomplete="off"/>
+        <input class="url-input" id="compare-url-b" type="text" placeholder="https://site-b.com" autocomplete="off"/>
+      </div>
+      <div class="compare-btn-row">
+        <button class="scan-btn" id="compare-btn" onclick="runCompare()">Compare</button>
+      </div>
+    </div>
+    <div class="loading" id="compare-loading">
+      Scanning both sites<span class="loading-dot">.</span><span class="loading-dot">.</span><span class="loading-dot">.</span>
+    </div>
+    <div id="compare-result"></div>
+  </div>
+
+  <!-- ── History View ── -->
+  <div class="view" id="view-history">
+    <div style="padding-top:1.5rem">
+      <div class="section-label">Recent Scans</div>
+      <div id="history-list" class="history-list">
+        <div class="empty-state">No scans yet. Run a scan to see history here.</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const RATING_COLORS = { A: '#22c55e', B: '#84cc16', C: '#f59e0b', D: '#f97316', F: '#ef4444' };
+const SEVERITY_COLORS = { critical: '#ef4444', warning: '#f59e0b', info: '#64748b' };
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'history') loadHistory();
+}
+
+function ratingColor(r) { return RATING_COLORS[r] || '#64748b'; }
+
+function renderScoreCard(data) {
+  const rc = ratingColor(data.rating);
+  return `
+    <div class="score-card">
+      <div class="rating-badge" style="color:${rc}">${data.rating}</div>
+      <div class="score-info">
+        <div class="score-url">${data.final_url}</div>
+        <div class="score-number">${data.score}<span style="font-size:1rem;color:var(--muted2)">/100</span></div>
+        <div class="score-sub">${data.passed_count}/${data.checks.length} checks passed${data.critical_count > 0 ? ' · <span style="color:var(--red)">' + data.critical_count + ' critical</span>' : ''}</div>
+      </div>
+      <div class="score-meta">${data.scanned_at}<br>${data.duration_seconds}s</div>
+    </div>`;
+}
+
+function renderCheck(c) {
+  const icon = c.passed ? '<span style="color:var(--green)">✓</span>' : '<span style="color:' + SEVERITY_COLORS[c.severity] + '">✗</span>';
+  const cls = c.passed ? 'passed' : 'failed-' + c.severity;
+  const ref = c.gdpr_reference ? `<span class="check-ref">${c.gdpr_reference}</span>` : '';
+  const rec = !c.passed && c.recommendation ? `<div class="check-rec">→ ${c.recommendation}</div>` : '';
+  const found = c.found_items && c.found_items.length > 0 && !c.passed
+    ? `<ul class="check-found">${c.found_items.slice(0,5).map(i => `<li>${i}</li>`).join('')}</ul>` : '';
+  return `
+    <div class="check-item ${cls}">
+      <div class="check-icon">${icon}</div>
+      <div class="check-body">
+        <div class="check-header">
+          <span class="check-name">${c.name}</span>
+          ${ref}
+        </div>
+        <div class="check-detail">${c.detail}</div>
+        ${rec}${found}
+      </div>
+    </div>`;
+}
+
+function renderResult(data) {
+  if (data.error) return `<div class="error-msg">Error: ${data.error}</div>`;
+  return renderScoreCard(data) +
+    '<div class="section-label">Checks</div>' +
+    '<div class="checks-list">' + data.checks.map(renderCheck).join('') + '</div>';
+}
+
+async function runScan() {
+  const url = document.getElementById('scan-url').value.trim();
+  if (!url) return;
+  const btn = document.getElementById('scan-btn');
+  const loading = document.getElementById('scan-loading');
+  const result = document.getElementById('scan-result');
+  btn.disabled = true;
+  loading.style.display = 'block';
+  result.innerHTML = '';
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    result.innerHTML = renderResult(data);
+  } catch (e) {
+    result.innerHTML = `<div class="error-msg">Request failed: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    loading.style.display = 'none';
+  }
+}
+
+async function runCompare() {
+  const urlA = document.getElementById('compare-url-a').value.trim();
+  const urlB = document.getElementById('compare-url-b').value.trim();
+  if (!urlA || !urlB) return;
+  const btn = document.getElementById('compare-btn');
+  const loading = document.getElementById('compare-loading');
+  const result = document.getElementById('compare-result');
+  btn.disabled = true;
+  loading.style.display = 'block';
+  result.innerHTML = '';
+  try {
+    const res = await fetch('/api/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url_a: urlA, url_b: urlB })
+    });
+    const data = await res.json();
+    result.innerHTML = `
+      <div class="compare-grid">
+        <div class="compare-col">
+          <div class="compare-header">Site A</div>
+          ${renderResult(data.a)}
+        </div>
+        <div class="compare-col">
+          <div class="compare-header">Site B</div>
+          ${renderResult(data.b)}
+        </div>
+      </div>`;
+  } catch (e) {
+    result.innerHTML = `<div class="error-msg">Request failed: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    loading.style.display = 'none';
+  }
+}
+
+async function loadHistory() {
+  const res = await fetch('/api/history');
+  const data = await res.json();
+  const el = document.getElementById('history-list');
+  if (!data.length) {
+    el.innerHTML = '<div class="empty-state">No scans yet. Run a scan to see history here.</div>';
+    return;
+  }
+  el.innerHTML = data.map(d => `
+    <div class="history-item" onclick="loadFromHistory('${d.url}')">
+      <div class="history-rating" style="color:${ratingColor(d.rating)}">${d.rating}</div>
+      <div class="history-info">
+        <div class="history-url">${d.final_url}</div>
+        <div class="history-meta">${d.scanned_at} · ${d.duration_seconds}s</div>
+      </div>
+      <div class="history-score">${d.score}/100<br><span style="color:var(--muted)">${d.passed_count}/${d.checks.length} passed</span></div>
+    </div>`).join('');
+}
+
+function loadFromHistory(url) {
+  document.getElementById('scan-url').value = url;
+  showViewByName('scan');
+}
+
+function showViewByName(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelector(`.tab-btn:nth-child(${name === 'scan' ? 1 : name === 'compare' ? 2 : 3})`).classList.add('active');
+}
+
+document.getElementById('scan-url').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runScan();
+});
+document.getElementById('compare-url-b').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runCompare();
+});
+</script>
+</body>
+</html>
